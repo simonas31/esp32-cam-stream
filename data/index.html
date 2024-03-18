@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ESP32 wifi connection</title>
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
+</head>
+
+<body style="background-color: #eeeeee;">
+    <div style="margin-left: auto; margin-right: auto; max-width: fit-content; margin-top: 3rem;">
+        <span style="color: #003366">
+            <h1>Available Networks</h1>
+            <p>
+                <select style="min-width: -webkit-fill-available;"
+                        id="availableNetworks">
+                    $OPTIONS$
+                </select>
+            </p>
+            <p>
+                <input type="password"
+                       placeholder="Network password"
+                       id="networkPassword"
+                       style="min-width: -webkit-fill-available;" />
+            </p>
+            <p>
+                <button type="button"
+                        id="BTN_SEND_BACK">Connect</button>
+            </p>
+        </span>
+    </div>
+</body>
+<script>
+    var Socket;
+    document
+        .getElementById("BTN_SEND_BACK")
+        .addEventListener("click", connectToNetwork);
+
+    function connectToNetwork() {
+        var msg = {
+            network_ssid: document.getElementById("availableNetworks").value,
+            network_password: document.getElementById("networkPassword").value,
+        };
+        console.log(msg);
+
+        fetch('/connect', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json' // Specify JSON content type
+            },
+            body: JSON.stringify(msg) // Convert data to JSON string
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.text();
+            })
+            .then(data => {
+                console.log('Response:', data);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+</script>
+
+</html>

@@ -1,5 +1,4 @@
-#include <Arduino.h>
-#include <WiFi.h>
+#include "SoftAP.h"
 #include <WebSocketsServer.h>
 #include "esp_camera.h"
 #include "esp_timer.h"
@@ -27,8 +26,8 @@
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-const char *ssid = "";                // change to your router ssid
-const char *password = "";                // change to your router password
+const char *ssid = "";                            // change to your router ssid
+const char *password = "";                        // change to your router password
 const char *server_url = "http://127.0.0.0:8080"; // server url where fall detection is being performed and the server where people want to watch this camera
 
 const char *websockets_server_host = "192.168.1.149"; // CHANGE HERE
@@ -40,6 +39,7 @@ camera_fb_t *fb = NULL;
 size_t _jpg_buf_len = 0;
 uint8_t *_jpg_buf = NULL;
 uint8_t state = 0;
+SoftAP *client = nullptr;
 
 // void notifyClients(const char *buffer, size_t buf_len)
 // {
@@ -155,26 +155,27 @@ void setup()
   Serial.begin(115200);
   Serial.setDebugOutput(false);
 
-  initCamera();
-  initWiFi();
-  initWebSocketsServer();
+  client = new SoftAP();
+  // initCamera();
+  // initWiFi();
+  // initWebSocketsServer();
 }
 
 void loop()
 {
-  ws.loop();
-  if (ws.connectedClients() > 0)
-  {
-    fb = esp_camera_fb_get();
-    if (!fb)
-    {
-      Serial.println("img capture failed");
-      esp_camera_fb_return(fb);
-      ESP.restart();
-    }
-    ws.broadcastBIN(fb->buf, fb->len);
-    Serial.println("image sent");
-    esp_camera_fb_return(fb);
-  }
-  delay(10);
+  // ws.loop();
+  // if (ws.connectedClients() > 0)
+  // {
+  //   fb = esp_camera_fb_get();
+  //   if (!fb)
+  //   {
+  //     Serial.println("img capture failed");
+  //     esp_camera_fb_return(fb);
+  //     ESP.restart();
+  //   }
+  //   ws.broadcastBIN(fb->buf, fb->len);
+  //   Serial.println("image sent");
+  //   esp_camera_fb_return(fb);
+  // }
+  // delay(10);
 }
