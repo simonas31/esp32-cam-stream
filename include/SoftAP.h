@@ -10,10 +10,12 @@ class SoftAP
 {
 public:
     SoftAP();
-    bool Connect();
+    void SetupSoftAP();
+    bool Connect(String network_ssid, String network_password);
     bool Disconnect();
     bool Reconnect();
     void HandleGetRequest(AsyncWebServerRequest *request);
+    void CheckConnectionRequest(AsyncWebServerRequest *request);
     String *SearchForAPs();
 
 private:

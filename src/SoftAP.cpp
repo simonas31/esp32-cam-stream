@@ -13,21 +13,7 @@ SoftAP::SoftAP()
 {
     Serial.begin(115200);
 
-    // Initialization of SoftAP to be able to connect to specified WiFi network
-    // WiFi.mode(WIFI_MODE_AP);
-    // WiFi.softAPConfig(local_IP, gateway, subnet);
-
-    WiFi.begin("TP-Link_4FD6", "53503794");
-    // WiFi.softAP(SoftAP_ssid, SoftAP_password);
-
-    while (WiFi.status() != WL_CONNECTED)
-    { // wait until WiFi is connected
-        delay(1000);
-        Serial.print(".");
-    }
-
-    Serial.print("SoftAP IP address = ");
-    Serial.println(WiFi.localIP());
+    SetupSoftAP();
 
     if (!SPIFFS.begin(true))
     {
@@ -36,6 +22,8 @@ SoftAP::SoftAP()
     }
 
     server.on("/", HTTP_GET, std::bind(&SoftAP::HandleGetRequest, this, std::placeholders::_1));
+
+    server.on("/checkConnection", HTTP_GET, std::bind(&SoftAP::CheckConnectionRequest, this, std::placeholders::_1));
 
     server.on(
         "/connect", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -84,15 +72,46 @@ SoftAP::SoftAP()
                     const char *network_password = doc["network_password"];
                     const char *network_ssid = doc["network_ssid"];
 
-                    // Print the extracted values for debugging
-                    Serial.print("Network SSID: ");
-                    Serial.println(network_ssid);
-                    Serial.print("Network Password: ");
-                    Serial.println(network_password);
+                    // not connected
+                    if (!WiFi.isConnected())
+                    {
+                        this->Connect(network_ssid, network_password) ? request->send(200, "text/plain", "Ok") : request->send(200, "text/plain", "Failed to Connect");
+                        return;
+                    }
+
+                    // trying to connect to another network
+                    int str_compare = strcmp(WiFi.SSID().c_str(), network_ssid);
+                    if (str_compare != 0 && this->Disconnect())
+                    {
+                        this->Connect(network_ssid, network_password) ? request->send(200, "text/plain", "Ok") : request->send(200, "text/plain", "Failed to Connect");
+                        return;
+                    }
+                    else if (str_compare == 0)
+                    {
+                        request->send(200, "text/plain", "Already Connected");
+                    }
                 }
             }
         });
     server.begin();
+}
+
+void SoftAP::SetupSoftAP()
+{
+    // Initialization of SoftAP to be able to connect to specified WiFi network
+    // WiFi.softAPConfig(local_IP, gateway, subnet);
+
+    // WiFi.begin("TP-Link_4FD6", "53503794");
+    WiFi.softAP(SoftAP_ssid, SoftAP_password);
+
+    // while (WiFi.status() != WL_CONNECTED)
+    // { // wait until WiFi is connected
+    //     delay(1000);
+    //     Serial.print(".");
+    // }
+
+    Serial.print("SoftAP IP address = ");
+    Serial.println(WiFi.softAPIP());
 }
 
 void SoftAP::HandleGetRequest(AsyncWebServerRequest *request)
@@ -122,28 +141,65 @@ void SoftAP::HandleGetRequest(AsyncWebServerRequest *request)
     }
     htmlContent.replace("$OPTIONS$", options);
 
+    // xz kodel cia perkelt reikejo
     file.close();
     // Send modified content as response
     request->send(200, "text/html", htmlContent);
 }
 
-/// @brief Connects to WiFi network
-bool SoftAP::Connect()
+/// @brief Check if connection is established with network
+/// @param request
+void SoftAP::CheckConnectionRequest(AsyncWebServerRequest *request)
 {
-    return false;
+    if (WiFi.isConnected())
+    {
+        request->send(200, "text/plain", "Ok");
+    }
+    else
+    {
+        request->send(200, "text/plain", "Not Connected");
+    }
+}
+
+/// @brief Connects to WiFi network
+bool SoftAP::Connect(String network_ssid, String network_password)
+{
+    Serial.begin(115200);
+
+    // WiFi.mode(WIFI_STA); ???
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(network_ssid, network_password);
+    // Send modified content as response
+    wl_status_t status = WiFi.status();
+    try
+    {
+        while (WiFi.status() != WL_CONNECTED)
+        {
+            delay(500);
+            Serial.print(".");
+        }
+    }
+    catch (const std::exception &e)
+    {
+        return false;
+    }
+
+    Serial.println(WiFi.localIP());
+
+    return true;
 }
 
 /// @brief Disconnects from WiFi network
 bool SoftAP::Disconnect()
 {
-    return false;
+    return WiFi.disconnect();
 }
 
 /// @brief Reconnect to WiFi network
 /// @return
 bool SoftAP::Reconnect()
 {
-    return false;
+    return WiFi.reconnect();
 }
 
 /// @brief Search fro WiFi networks

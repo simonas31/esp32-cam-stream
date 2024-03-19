@@ -8,9 +8,10 @@
 </head>
 
 <body style="background-color: #eeeeee;">
-    <div style="margin-left: auto; margin-right: auto; max-width: fit-content; margin-top: 3rem;">
+    <div style="margin-left: auto; margin-right: auto; max-width: 350px; margin-top: 3rem;">
         <span style="color: #003366">
             <h1>Available Networks</h1>
+            <p id="response"></p>
             <p>
                 <select style="min-width: -webkit-fill-available;"
                         id="availableNetworks">
@@ -31,7 +32,8 @@
     </div>
 </body>
 <script>
-    var Socket;
+    var responseEl = document.getElementById("response");
+    let nIntervId = null;
     document
         .getElementById("BTN_SEND_BACK")
         .addEventListener("click", connectToNetwork);
@@ -41,8 +43,9 @@
             network_ssid: document.getElementById("availableNetworks").value,
             network_password: document.getElementById("networkPassword").value,
         };
-        console.log(msg);
 
+        responseEl.style = "color: green;";
+        responseEl.innerHTML = "Connecting to network. Please wait...";
         fetch('/connect', {
             method: 'POST',
             headers: {
@@ -57,11 +60,56 @@
                 return response.text();
             })
             .then(data => {
-                console.log('Response:', data);
+                if (data == "Ok") {
+                    nIntervId = setInterval(checkIfConnected, 2000);
+                } else if (data == "Already Connected") {
+                    responseEl.style = "color: blue;";
+                    responseEl.innerHTML = "Connection is already established.";
+                } else if (data == "Failed to Connect") {
+                    responseEl.style = "color: red;";
+                    responseEl.innerHTML = "Failed to connect. Check credentials (or try to refresh the page).";
+                }
             })
             .catch(error => {
-                console.error('Error:', error);
+                responseEl.style = "color: red;";
+                responseEl.innerHTML = "Could not connect to network. Please try again.";
             });
+    }
+
+    function checkIfConnected() {
+        if (nIntervId != null) {
+            fetch("/checkConnection", {
+                method: 'GET',
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.text();
+                })
+                .then(data => {
+                    if (data == "Ok") {
+                        responseEl.style = "color: green;";
+                        responseEl.innerHTML = "Connection was successfuly established.";
+                    } else if (data == "Not Connected") {
+                        responseEl.style = "color: red;";
+                        responseEl.innerHTML = "Connection could no be established. Please try again.";
+                    }
+
+                    cleanInterval();
+                })
+                .catch(error => {
+                    responseEl.style = "color: red;";
+                    responseEl.innerHTML = "Could not connect to network.";
+
+                    cleanInterval();
+                });
+        }
+
+        function cleanInterval() {
+            clearInterval(nIntervId);
+            nIntervId = null;
+        }
     }
 </script>
 
