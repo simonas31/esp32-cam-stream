@@ -9,6 +9,8 @@ const IPAddress subnet(255, 255, 255, 0);
 
 AsyncWebServer server(80);
 
+const int maxConnectionAttemps = 7;
+
 SoftAP::SoftAP()
 {
     Serial.begin(115200);
@@ -169,17 +171,23 @@ bool SoftAP::Connect(String network_ssid, String network_password)
     // WiFi.mode(WIFI_STA); ???
     WiFi.setAutoReconnect(true);
     WiFi.begin(network_ssid, network_password);
-    // Send modified content as response
-    wl_status_t status = WiFi.status();
+
+    int connectionAttempts = 0;
     try
     {
-        while (WiFi.status() != WL_CONNECTED)
+        while (WiFi.status() != WL_CONNECTED && connectionAttempts < maxConnectionAttemps)
         {
+            Serial.println(connectionAttempts);
+            connectionAttempts++;
             delay(500);
-            Serial.print(".");
         }
     }
     catch (const std::exception &e)
+    {
+        return false;
+    }
+
+    if (WiFi.status() != WL_CONNECTED)
     {
         return false;
     }

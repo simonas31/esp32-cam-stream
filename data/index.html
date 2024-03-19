@@ -67,7 +67,7 @@
                     responseEl.innerHTML = "Connection is already established.";
                 } else if (data == "Failed to Connect") {
                     responseEl.style = "color: red;";
-                    responseEl.innerHTML = "Failed to connect. Check credentials (or try to refresh the page).";
+                    responseEl.innerHTML = "Failed to connect. Check credentials or signal strength(try to refresh the page).";
                 }
             })
             .catch(error => {
