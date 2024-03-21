@@ -41,6 +41,9 @@ uint8_t *_jpg_buf = NULL;
 uint8_t state = 0;
 SoftAP *client = nullptr;
 
+TaskHandle_t Task0;
+TaskHandle_t Task1;
+
 // void notifyClients(const char *buffer, size_t buf_len)
 // {
 //   ws.(buffer, buf_len);
@@ -82,6 +85,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t *payload, size_t length)
 
 esp_err_t initCamera()
 {
+  Serial.begin(115200);
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -104,16 +108,24 @@ esp_err_t initCamera()
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
 
-  // parameters for image quality and size
-  config.frame_size = FRAMESIZE_VGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
-  config.jpeg_quality = 15;          // 10-63 lower number means higher quality
-  config.fb_count = 2;
+  if (psramFound())
+  {
+    config.frame_size = FRAMESIZE_VGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+    config.jpeg_quality = 15;          // 10-63 lower number means higher quality
+    config.fb_count = 2;
+  }
+  else
+  {
+    config.frame_size = FRAMESIZE_SVGA;
+    config.jpeg_quality = 12;
+    config.fb_count = 1;
+  }
 
   // Camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK)
   {
-    Serial.printf("camera init FAIL: 0x%x", err);
+    Serial.println("bad camera init");
     return err;
   }
   sensor_t *s = esp_camera_sensor_get();
@@ -122,22 +134,22 @@ esp_err_t initCamera()
   return ESP_OK;
 };
 
-esp_err_t initWiFi()
-{
-  WiFi.begin(ssid, password);
-  Serial.println("Wifi init ");
+// esp_err_t initWiFi()
+// {
+//   WiFi.begin(ssid, password);
+//   Serial.println("Wifi init ");
 
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
+//   while (WiFi.status() != WL_CONNECTED)
+//   {
+//     delay(500);
+//     Serial.print(".");
+//   }
 
-  Serial.println("");
-  Serial.println("WiFi OK");
-  Serial.println(WiFi.localIP());
-  return ESP_OK;
-};
+//   Serial.println("");
+//   Serial.println("WiFi OK");
+//   Serial.println(WiFi.localIP());
+//   return ESP_OK;
+// };
 
 esp_err_t initWebSocketsServer()
 {
@@ -148,6 +160,34 @@ esp_err_t initWebSocketsServer()
   return ESP_OK;
 }
 
+void SendDataToWS_Server(void *pvParameters)
+{
+  Serial.begin(115200);
+  initCamera();
+  initWebSocketsServer();
+
+  for (;;)
+  {
+    ws.loop();
+    if (ws.connectedClients() > 0 && WiFi.isConnected())
+    {
+      fb = esp_camera_fb_get();
+      if (!fb)
+      {
+        Serial.println("img capture failed");
+        esp_camera_fb_return(fb);
+        ESP.restart();
+      }
+      ws.broadcastBIN(fb->buf, fb->len);
+      Serial.println("image sent");
+      esp_camera_fb_return(fb);
+    }
+    // Add a small delay to let the watchdog process
+    // https://stackoverflow.com/questions/66278271/task-watchdog-got-triggered-the-tasks-did-not-reset-the-watchdog-in-time
+    delay(10);
+  }
+}
+
 void setup()
 {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
@@ -155,6 +195,10 @@ void setup()
   Serial.begin(115200);
   Serial.setDebugOutput(false);
 
+  // core 0 executes sending images to the server
+  xTaskCreatePinnedToCore(SendDataToWS_Server, "Sending images to WS", 10000, NULL, 1, &Task0, 0);
+
+  // core 1 executes web requests to the localhosted server
   client = new SoftAP();
   // initCamera();
   // initWiFi();
@@ -163,19 +207,6 @@ void setup()
 
 void loop()
 {
-  // ws.loop();
-  // if (ws.connectedClients() > 0)
-  // {
-  //   fb = esp_camera_fb_get();
-  //   if (!fb)
-  //   {
-  //     Serial.println("img capture failed");
-  //     esp_camera_fb_return(fb);
-  //     ESP.restart();
-  //   }
-  //   ws.broadcastBIN(fb->buf, fb->len);
-  //   Serial.println("image sent");
-  //   esp_camera_fb_return(fb);
-  // }
-  // delay(10);
+  // restore connection here???
+  delay(10);
 }

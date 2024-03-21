@@ -9,23 +9,50 @@ const IPAddress subnet(255, 255, 255, 0);
 
 AsyncWebServer server(80);
 
-const int maxConnectionAttemps = 7;
+long lastScanMillis = 0;
 
 SoftAP::SoftAP()
 {
     Serial.begin(115200);
 
-    SetupSoftAP();
+    if (!EEPROM.begin(EEPROM_SIZE))
+    {
+        Serial.println("An error occurred while initializing EEPROM");
+        ESP.restart();
+        return;
+    }
 
     if (!SPIFFS.begin(true))
     {
         Serial.println("An error occurred while mounting SPIFFS");
+        ESP.restart();
         return;
+    }
+
+    // first setup soft ap
+    SetupSoftAP();
+
+    // then try to connect to wifi
+    String ssid, password;
+    byte connection_flag = EEPROM.read(EEPROM_CONNECTION_FLAG_ADDRESS);
+
+    if (connection_flag == 1)
+    {
+        Serial.println("Previous connection detected. Restoring connection...");
+        EEPROM.get(EEPROM_SSID_ADDRESS, ssid);
+        EEPROM.get(EEPROM_PASSWORD_ADDRESS, password);
+        Connect(ssid, password);
+    }
+    else
+    {
+        Serial.println("No previous connection detected.");
     }
 
     server.on("/", HTTP_GET, std::bind(&SoftAP::HandleGetRequest, this, std::placeholders::_1));
 
     server.on("/checkConnection", HTTP_GET, std::bind(&SoftAP::CheckConnectionRequest, this, std::placeholders::_1));
+
+    server.on("/networks", HTTP_GET, std::bind(&SoftAP::SearchForAPsRequest, this, std::placeholders::_1));
 
     server.on(
         "/connect", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -103,6 +130,7 @@ void SoftAP::SetupSoftAP()
     // Initialization of SoftAP to be able to connect to specified WiFi network
     // WiFi.softAPConfig(local_IP, gateway, subnet);
 
+    WiFi.disconnect();
     // WiFi.begin("TP-Link_4FD6", "53503794");
     WiFi.softAP(SoftAP_ssid, SoftAP_password);
 
@@ -132,19 +160,17 @@ void SoftAP::HandleGetRequest(AsyncWebServerRequest *request)
 
     // Replace placeholder with desired string
     // update network access points
-    String *networks = SearchForAPs();
-    String options = "";
-    if (networks != nullptr)
+
+    // uncomment this if needed
+    if (WiFi.isConnected())
     {
-        for (int i = 0; i < number_of_networks; ++i)
-        {
-            options += "<option>" + networks[i] + "</option>";
-        }
+        String current_ssid = WiFi.SSID();
+        htmlContent.replace("<br />", "You're already connected to: " + current_ssid);
     }
-    htmlContent.replace("$OPTIONS$", options);
 
     // xz kodel cia perkelt reikejo
     file.close();
+
     // Send modified content as response
     request->send(200, "text/html", htmlContent);
 }
@@ -163,6 +189,58 @@ void SoftAP::CheckConnectionRequest(AsyncWebServerRequest *request)
     }
 }
 
+/// @brief Search for WiFi networks
+void SoftAP::SearchForAPsRequest(AsyncWebServerRequest *request)
+{
+    Serial.begin(115200);
+    int number_of_networks = -1;
+
+    while (true)
+    {
+        long currentMillis = millis();
+        // trigger Wi-Fi network scan
+        if (currentMillis - lastScanMillis > SCAN_PERIOD)
+        {
+            WiFi.scanNetworks(true);
+            Serial.print("\nScan start ... ");
+            lastScanMillis = currentMillis;
+        }
+
+        // print out Wi-Fi network scan result upon completion
+        number_of_networks = WiFi.scanComplete();
+
+        if (number_of_networks >= 0)
+        {
+            break;
+        }
+    }
+
+    if (number_of_networks < 0)
+    {
+        request->send(200, "text/plain", "Could not find any networks.");
+        return;
+    }
+    else if (number_of_networks > MAX_NETWORKS_SHOWN)
+    {
+        number_of_networks = MAX_NETWORKS_SHOWN;
+    }
+
+    String jsonString = "";
+    JsonDocument doc;
+    JsonObject object = doc.to<JsonObject>();
+    JsonArray networks = object["networks"].to<JsonArray>();
+
+    for (int i = 0; i < number_of_networks; ++i)
+    {
+        // networks_ssids[i] = WiFi.SSID(i);
+        networks.add(WiFi.SSID(i));
+    }
+
+    WiFi.scanDelete();
+    convertFromJson(networks, jsonString);
+    request->send(200, "application/json", jsonString);
+}
+
 /// @brief Connects to WiFi network
 bool SoftAP::Connect(String network_ssid, String network_password)
 {
@@ -175,9 +253,8 @@ bool SoftAP::Connect(String network_ssid, String network_password)
     int connectionAttempts = 0;
     try
     {
-        while (WiFi.status() != WL_CONNECTED && connectionAttempts < maxConnectionAttemps)
+        while (WiFi.status() != WL_CONNECTED && connectionAttempts < MAX_CONNECTION_ATTEMPTS)
         {
-            Serial.println(connectionAttempts);
             connectionAttempts++;
             delay(500);
         }
@@ -192,6 +269,8 @@ bool SoftAP::Connect(String network_ssid, String network_password)
         return false;
     }
 
+    SaveConnectionData(network_ssid, network_password);
+
     Serial.println(WiFi.localIP());
 
     return true;
@@ -203,24 +282,21 @@ bool SoftAP::Disconnect()
     return WiFi.disconnect();
 }
 
-/// @brief Reconnect to WiFi network
-/// @return
+/// @brief will force a disconnect and then start reconnecting to AP
+/// @return true when successful
 bool SoftAP::Reconnect()
 {
     return WiFi.reconnect();
 }
 
-/// @brief Search fro WiFi networks
-/// @return
-String *SoftAP::SearchForAPs()
+/// @brief Save connection data to eeprom
+/// @param ssid network ssid
+/// @param password network password
+void SoftAP::SaveConnectionData(String ssid, String password)
 {
-    number_of_networks = WiFi.scanNetworks();
-    networks_ssids = new String[number_of_networks];
-
-    for (int i = 0; i < number_of_networks; ++i)
-    {
-        networks_ssids[i] = WiFi.SSID(i);
-    }
-
-    return networks_ssids;
+    // Write SSID, password, and connection flag to EEPROM
+    EEPROM.put(EEPROM_SSID_ADDRESS, ssid);
+    EEPROM.put(EEPROM_PASSWORD_ADDRESS, password);
+    EEPROM.write(EEPROM_CONNECTION_FLAG_ADDRESS, 1);
+    EEPROM.commit();
 }
