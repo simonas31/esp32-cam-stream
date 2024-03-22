@@ -135,7 +135,8 @@ void SoftAP::SetupSoftAP()
     WiFi.softAP(SoftAP_ssid, SoftAP_password);
 
     // while (WiFi.status() != WL_CONNECTED)
-    // { // wait until WiFi is connected
+    // {
+    //     // wait until WiFi is connected
     //     delay(1000);
     //     Serial.print(".");
     // }
@@ -229,15 +230,16 @@ void SoftAP::SearchForAPsRequest(AsyncWebServerRequest *request)
     JsonDocument doc;
     JsonObject object = doc.to<JsonObject>();
     JsonArray networks = object["networks"].to<JsonArray>();
+    JsonArray signals_strength = object["signals_strength"].to<JsonArray>();
 
     for (int i = 0; i < number_of_networks; ++i)
     {
-        // networks_ssids[i] = WiFi.SSID(i);
         networks.add(WiFi.SSID(i));
+        signals_strength.add(WiFi.RSSI(i));
     }
 
     WiFi.scanDelete();
-    convertFromJson(networks, jsonString);
+    convertFromJson(doc, jsonString);
     request->send(200, "application/json", jsonString);
 }
 
