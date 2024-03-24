@@ -7,7 +7,7 @@ const IPAddress local_IP(192, 168, 1, 22);
 const IPAddress gateway(192, 168, 1, 5);
 const IPAddress subnet(255, 255, 255, 0);
 
-AsyncWebServer server(80);
+AsyncWebServer async_server(81);
 
 long lastScanMillis = 0;
 
@@ -48,13 +48,13 @@ SoftAP::SoftAP()
         Serial.println("No previous connection detected.");
     }
 
-    server.on("/", HTTP_GET, std::bind(&SoftAP::HandleGetRequest, this, std::placeholders::_1));
+    async_server.on("/", HTTP_GET, std::bind(&SoftAP::HandleGetRequest, this, std::placeholders::_1));
 
-    server.on("/checkConnection", HTTP_GET, std::bind(&SoftAP::CheckConnectionRequest, this, std::placeholders::_1));
+    async_server.on("/checkConnection", HTTP_GET, std::bind(&SoftAP::CheckConnectionRequest, this, std::placeholders::_1));
 
-    server.on("/networks", HTTP_GET, std::bind(&SoftAP::SearchForAPsRequest, this, std::placeholders::_1));
+    async_server.on("/networks", HTTP_GET, std::bind(&SoftAP::SearchForAPsRequest, this, std::placeholders::_1));
 
-    server.on(
+    async_server.on(
         "/connect", HTTP_POST, [](AsyncWebServerRequest *request)
         {
             // This is the main handler for handling the POST request itself
@@ -122,7 +122,7 @@ SoftAP::SoftAP()
                 }
             }
         });
-    server.begin();
+    async_server.begin();
 }
 
 void SoftAP::SetupSoftAP()
@@ -142,7 +142,10 @@ void SoftAP::SetupSoftAP()
     // }
 
     Serial.print("SoftAP IP address = ");
-    Serial.println(WiFi.softAPIP());
+    IPAddress softAPIP = WiFi.softAPIP();
+    Serial.println(softAPIP);
+
+    SetupMDNS("EWstation");
 }
 
 void SoftAP::HandleGetRequest(AsyncWebServerRequest *request)
@@ -248,7 +251,6 @@ bool SoftAP::Connect(String network_ssid, String network_password)
 {
     Serial.begin(115200);
 
-    // WiFi.mode(WIFI_STA); ???
     WiFi.setAutoReconnect(true);
     WiFi.begin(network_ssid, network_password);
 
@@ -291,6 +293,23 @@ bool SoftAP::Reconnect()
     return WiFi.reconnect();
 }
 
+/// @brief Setup mdns name
+/// @param mdns_name
+void SoftAP::SetupMDNS(String mdns_name)
+{
+    if (!MDNS.begin(mdns_name))
+    {
+        Serial.println("Error setting up mDNS");
+        ESP.restart();
+    }
+    else
+    {
+        Serial.println("mDNS established successfully");
+    }
+
+    MDNS.addService("http", "tcp", 80);
+}
+
 /// @brief Save connection data to eeprom
 /// @param ssid network ssid
 /// @param password network password
@@ -301,4 +320,27 @@ void SoftAP::SaveConnectionData(String ssid, String password)
     EEPROM.put(EEPROM_PASSWORD_ADDRESS, password);
     EEPROM.write(EEPROM_CONNECTION_FLAG_ADDRESS, 1);
     EEPROM.commit();
+}
+
+/// @brief Sets up device name and saves it in EEPROM
+String SoftAP::GetDeviceName()
+{
+    String device_name;
+    byte device_name_flag = EEPROM.read(EEPROM_DEVICE_NAME_FLAG_ADDRESS);
+
+    if (device_name_flag == 1)
+    {
+        Serial.println("Previous device name detected.");
+        EEPROM.get(EEPROM_DEVICE_NAME_ADDRESS, device_name);
+    }
+    else
+    {
+        Serial.println("Previous device name not detected.");
+        device_name = "EW-" + String(ESP.getEfuseMac());
+        EEPROM.put(EEPROM_DEVICE_NAME_ADDRESS, device_name);
+        EEPROM.put(EEPROM_DEVICE_NAME_FLAG_ADDRESS, 1);
+        EEPROM.commit();
+    }
+
+    return device_name;
 }
