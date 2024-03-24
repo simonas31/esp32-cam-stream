@@ -313,7 +313,7 @@ void handleNotFound()
   message += "\nArguments: ";
   message += server.args();
   message += "\n";
-  server.send(200, "text / plain", message);
+  server.send(200, "text/plain", message);
 }
 
 // ======== Server Connection Handler Task ==========================
@@ -415,22 +415,22 @@ void setup()
     ESP.restart();
   }
 
-  // Start mainstreaming RTOS task
-  // xTaskCreatePinnedToCore(
-  //     mjpegCB,
-  //     "mjpeg",
-  //     4 * 1024,
-  //     NULL,
-  //     2,
-  //     &tMjpeg,
-  //     APP_CPU);
-
   // core 1 executes web requests to the localhosted server
-  // softap_client = new SoftAP();
+  softap_client = new SoftAP();
+
+  // Start mainstreaming RTOS task
+  xTaskCreatePinnedToCore(
+      mjpegCB,
+      "mjpeg",
+      4 * 1024,
+      NULL,
+      2,
+      &tMjpeg,
+      APP_CPU);
 }
 
 void loop()
 {
   // restore connection here???
-  vTaskDelay(1000);
+  // vTaskDelay(1000);
 }
