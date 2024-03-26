@@ -128,18 +128,8 @@ SoftAP::SoftAP()
 void SoftAP::SetupSoftAP()
 {
     // Initialization of SoftAP to be able to connect to specified WiFi network
-    // WiFi.softAPConfig(local_IP, gateway, subnet);
-
     WiFi.disconnect();
-    // WiFi.begin("TP-Link_4FD6", "53503794");
     WiFi.softAP(SoftAP_ssid, SoftAP_password);
-
-    // while (WiFi.status() != WL_CONNECTED)
-    // {
-    //     // wait until WiFi is connected
-    //     delay(1000);
-    //     Serial.print(".");
-    // }
 
     Serial.print("SoftAP IP address = ");
     IPAddress softAPIP = WiFi.softAPIP();
