@@ -2,20 +2,18 @@
 #define PRO_CPU 0
 
 #include "SoftAP.h"
-#include "OV2640.h"
 #include <esp_bt.h>
 #include <esp_wifi.h>
 #include <esp_sleep.h>
+#include <esp_camera.h>
 #include <driver/rtc_io.h>
+#include <PubSubClient.h>
+#include <WiFiClientSecure.h>
 
 #include "esp_timer.h"
 #include "base64.h"
 #include "soc/soc.h"          //disable brownout problems
 #include "soc/rtc_cntl_reg.h" //disable brownout problems
-
-// for google cloud storage
-#include <Firebase_ESP_Client.h>
-#include <addons/TokenHelper.h>
 
 // configuration for AI Thinker Camera board
 #define PWDN_GPIO_NUM 32
@@ -35,29 +33,6 @@
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-// Google Cloud Storage bucket name and dont forget to REPLACE_WITH_YOUR_BUCKET_NAME
-#define STORAGE_BUCKET_NAME "REPLACE_WITH_YOUR_BUCKET_NAME"
-
-// Google Project ID and dont forget to REPLACE_WITH_YOUR_PROJECT_ID
-#define PROJECT_ID "REPLACE_WITH_YOUR_PROJECT_ID"
-
-// Service Account's client email and dont forget to REPLACE_WITH_YOUR_CLIENT_EMAIL
-#define CLIENT_EMAIL "REPLACE_WITH_YOUR_CLIENT_EMAIL"
-
-// Service Account's private key dont forget to REPLACE_WITH_YOUR_PRIVATE_KEY
-const char PRIVATE_KEY[] PROGMEM = "-----BEGIN PRIVATE KEY-----\nREPLACE_WITH_YOUR_PRIVATE_KEY\n-----END PRIVATE KEY-----\n";
-
-OV2640 cam;
-
-// Define Firebase Data object
-FirebaseData fbdo;
-
-FirebaseAuth auth;
-FirebaseConfig fb_config;
-
-// Define request properties
-RequestProperties requestProps;
-
 // Define soft ap object for connecting to WiFi
 SoftAP *softap_client = nullptr;
 
@@ -67,76 +42,187 @@ bool motion_detected = false;
 TaskHandle_t burstImages_t;
 TaskHandle_t Task1;
 
-const int captureInterval = 10; // Adjust for desired frame rate (ms)
-const int captureTime = 5000;   // Adjust for desired capture time (ms)
+// MQTT Broker settings
+const char *mqtt_broker = "bc316ac1.emqx.cloud";
+const char *mqtt_topic = "ews_dev";
+const char *mqtt_username = "ews_dev";
+const char *mqtt_password = "ews_dev";
+const int mqtt_port = 1883;
 
-// The Google Cloud Storage upload callback function
-void gcsUploadCallback(UploadStatusInfo info)
+// WiFi and MQTT client initialization
+WiFiClient esp_client;
+PubSubClient mqtt_client(esp_client);
+
+camera_fb_t *fb = NULL;
+size_t _jpg_buf_len = 0;
+uint8_t *_jpg_buf = NULL;
+
+void connectToMQTT()
 {
-  if (info.status == firebase_gcs_upload_status_init)
+  while (!mqtt_client.connected())
   {
-    Serial.printf("Uploading file %s (%d) to %s\n", info.localFileName.c_str(), info.fileSize, info.remoteFileName.c_str());
+    String client_id = "esp32-client-" + String(WiFi.macAddress());
+    Serial.printf("Connecting to MQTT Broker as %s...\n", client_id.c_str());
+    if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password))
+    {
+      Serial.println("Connected to MQTT broker");
+      // mqtt_client.subscribe(mqtt_topic);
+      // mqtt_client.publish(mqtt_topic, "Hi EMQX I'm ESP32 ^^"); // Publish message upon connection
+    }
+    else
+    {
+      Serial.print("Failed to connect to MQTT broker, rc=");
+      Serial.print(mqtt_client.state());
+      Serial.println(" Retrying in 5 seconds.");
+      delay(5000);
+    }
   }
-  else if (info.status == firebase_gcs_upload_status_upload)
+}
+
+void sendPayload(String encodedImage, String jsonString, JsonDocument doc, int *current_image_number, bool last_image)
+{
+  if (!mqtt_client.connected())
   {
-    Serial.printf("Uploaded %d%s, Elapsed time %d ms\n", (int)info.progress, "%", info.elapsedTime);
+    connectToMQTT();
   }
-  else if (info.status == firebase_gcs_upload_status_complete)
+  mqtt_client.loop();
+  fb = esp_camera_fb_get();
+
+  if (!fb)
   {
-    Serial.println("Upload completed\n");
-    FileMetaInfo meta = fbdo.metaData();
-    Serial.printf("Name: %s\n", meta.name.c_str());
-    Serial.printf("Bucket: %s\n", meta.bucket.c_str());
-    Serial.printf("contentType: %s\n", meta.contentType.c_str());
-    Serial.printf("Size: %d\n", meta.size);
-    Serial.printf("Generation: %lu\n", meta.generation);
-    Serial.printf("ETag: %s\n", meta.etag.c_str());
-    Serial.printf("CRC32: %s\n", meta.crc32.c_str());
-    Serial.printf("Tokens: %s\n", meta.downloadTokens.c_str());      // only gcs_upload_type_multipart and gcs_upload_type_resumable upload types.
-    Serial.printf("Download URL: %s\n", fbdo.downloadURL().c_str()); // only gcs_upload_type_multipart and gcs_upload_type_resumable upload types.
+    Serial.println("img capture failed");
+    esp_camera_fb_return(fb);
+    ESP.restart();
   }
-  else if (info.status == firebase_gcs_upload_status_error)
+
+  // create json object with data
+  encodedImage = base64::encode(fb->buf, fb->len);
+  doc["image"] = "\"" + encodedImage + "\"";
+  doc["file_name"] = "\"EW" + String(ESP.getEfuseMac()) + "\"";
+  // find out if last message
+  if (last_image)
   {
-    Serial.printf("Upload failed, %s\n", info.errorMsg.c_str());
+    doc["last_message"] = true;
   }
+  else
+  {
+    doc["last_message"] = false;
+  }
+
+  doc["image_number"] = current_image_number;
+  current_image_number++;
+
+  convertFromJson(doc, jsonString);
+  mqtt_client.publish(mqtt_topic, jsonString.c_str());
+  esp_camera_fb_return(fb);
 }
 
 void burstImages_cb(void *pvParameters)
 {
-  unsigned long startTime;
-  String upload_filename;
+  int current_image_number = 1;
+  Serial.println("Starting upload...");
+  String encodedImage, jsonString = "";
+  JsonDocument doc;
+  long int currentTime = millis();
 
-  for (;;)
+  // for (;;)
+  // {
+  while (millis() - currentTime <= 15000)
   {
-    // uint8_t *fb = cam.getfb();
-    // size_t len = cam.getSize();
-
-    // if motion detected send images to cloud
-    // if (motion_detected)
-    // {
-    //   startTime = millis();
-    //   while (millis() - startTime < captureTime)
-    //   {
-    //
-    // use prev code from git to implement faster and more efficient image uploading
-    if (Firebase.ready())
-    {
-      String file_name(millis());
-      File file = LittleFS.open("/temp.jpeg", FILE_WRITE);
-      cam.run();
-      file.write(cam.getfb(), cam.getSize());
-      file.close();
-
-      Firebase.GCStorage.upload(&fbdo, STORAGE_BUCKET_NAME, "/temp.jpeg", mem_storage_type_flash, gcs_upload_type_multipart, file_name + ".jpeg", "image/jpeg", nullptr, nullptr, nullptr, NULL);
-      Serial.println("done");
-      LittleFS.remove("/temp.jpeg");
-    }
-    //   }
-    // }
-
-    // delay(captureInterval);
+    sendPayload(encodedImage, jsonString, doc, &current_image_number, false);
   }
+  // add last frame send that it is the last and start creating video in python
+  sendPayload(encodedImage, jsonString, doc, &current_image_number, true);
+
+  delay(10);
+  // }
 }
+
+esp_err_t initCamera()
+{
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+
+  // parameters for image quality and size
+  config.frame_size = FRAMESIZE_XGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+  config.jpeg_quality = 15;          // 10-63 lower number means higher quality
+  config.fb_count = 2;
+
+  // Camera init
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK)
+  {
+    Serial.printf("camera init FAIL: 0x%x", err);
+    delay(2000);
+    ESP.restart();
+  }
+  sensor_t *s = esp_camera_sensor_get();
+  s->set_framesize(s, FRAMESIZE_VGA);
+  Serial.println("camera init OK");
+  return ESP_OK;
+};
+
+esp_err_t initCamera()
+{
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+
+  // parameters for image quality and size
+  config.frame_size = FRAMESIZE_XGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+  config.jpeg_quality = 15;          // 10-63 lower number means higher quality
+  config.fb_count = 2;
+
+  // Camera init
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK)
+  {
+    Serial.printf("camera init FAIL: 0x%x", err);
+    delay(2000);
+    ESP.restart();
+  }
+  sensor_t *s = esp_camera_sensor_get();
+  s->set_framesize(s, FRAMESIZE_VGA);
+  Serial.println("camera init OK");
+  return ESP_OK;
+};
 
 void setup()
 {
@@ -175,12 +261,8 @@ void setup()
   config.jpeg_quality = 15;
   config.fb_count = 2; // on esp32 psram is enabled
 
-  if (cam.init(config) != ESP_OK)
-  {
-    Serial.println("Error initializing the camera.");
-    delay(3000);
-    ESP.restart();
-  }
+  initCamera();
+
   Serial.println("Camera initialized successfully.");
   WiFi.begin("TP-Link_4FD6", "53503794");
 
@@ -194,30 +276,15 @@ void setup()
   // core 1 executes web requests to the localhosted server
   // softap_client = new SoftAP();
 
-  /* Assign the Service Account credentials for OAuth2.0 authen */
-  fb_config.service_account.data.client_email = CLIENT_EMAIL;
-  fb_config.service_account.data.project_id = PROJECT_ID;
-  fb_config.service_account.data.private_key = PRIVATE_KEY;
+  // Set Root CA certificate
+  // esp_client.setCACert(ca_cert);
+  // esp_client.setInsecure();
 
-  /* Assign the callback function for the long running token generation task */
-  fb_config.token_status_callback = tokenStatusCallback;
+  mqtt_client.setServer(mqtt_broker, mqtt_port);
+  mqtt_client.setKeepAlive(60); // the default is 60 seconds, and it is disabled when it is set to 0
+  mqtt_client.setBufferSize(30000);
+  connectToMQTT();
 
-  /* Assign upload buffer size in byte */
-  // Data to be uploaded will send as multiple chunks with this size, to compromise between speed and memory used for buffering.
-  // The memory from external SRAM/PSRAM will not use in the TCP client internal tx buffer.
-  fb_config.gcs.upload_buffer_size = 2048;
-
-  Firebase.reconnectNetwork(true);
-
-  // Large data transmission may require larger RX buffer, otherwise connection issue or data read time out can be occurred.
-  fbdo.setBSSLBufferSize(4096 /* Rx buffer size in bytes from 512 - 16384 */, 1024 /* Tx buffer size in bytes from 512 - 16384 */);
-
-  // Define optional request properties
-  // requestProps.contentType = "image/jpeg";
-
-  Firebase.begin(&fb_config, &auth);
-
-  LittleFS.begin();
   // core 0 bursts images to google cloud
   xTaskCreatePinnedToCore(
       burstImages_cb,
