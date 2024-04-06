@@ -57,6 +57,11 @@ camera_fb_t *fb = NULL;
 size_t _jpg_buf_len = 0;
 uint8_t *_jpg_buf = NULL;
 
+bool sensorTriggered = false;          // Flag to track if sensor has been triggered
+unsigned long lastTriggerTime = 0;     // Time of last trigger
+const unsigned long delayTime = 60000; // Delay time in milliseconds (60 seconds)
+const int PIR_SENSOR_PIN = 13;         // Pin connected to PIR sensor
+
 void connectToMQTT()
 {
   while (!mqtt_client.connected())
@@ -124,17 +129,32 @@ void burstImages_cb(void *pvParameters)
   JsonDocument doc;
   long int currentTime = millis();
 
-  // for (;;)
-  // {
-  while (millis() - currentTime <= 15000)
+  while (!WiFi.isConnected())
   {
-    sendPayload(encodedImage, jsonString, doc, current_image_number, false);
+    Serial.print("Process needs to be connected to wifi");
+    delay(500);
   }
-  // add last frame send that it is the last and start creating video in python
-  sendPayload(encodedImage, jsonString, doc, current_image_number, true);
 
-  delay(10);
-  // }
+  Serial.print("Process connected to wifi");
+
+  for (;;)
+  {
+    if (sensorTriggered && WiFi.isConnected())
+    {
+      Serial.println("Begin uploading...");
+      currentTime = millis();
+      while (millis() - currentTime <= 15000)
+      {
+        sendPayload(encodedImage, jsonString, doc, current_image_number, false);
+      }
+      // add last frame send that it is the last and start creating video in python
+      delay(100);
+      sendPayload(encodedImage, jsonString, doc, current_image_number, true);
+      Serial.println("Done uploading...");
+    }
+
+    delay(10);
+  }
 }
 
 esp_err_t initCamera()
@@ -188,16 +208,8 @@ void setup()
   initCamera();
 
   Serial.println("Camera initialized successfully.");
-  WiFi.begin("DIR-825-1dd3", "88169798");
-
-  Serial.print("Connecting to Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    Serial.print(".");
-    delay(300);
-  }
   // core 1 executes web requests to the localhosted server
-  // softap_client = new SoftAP();
+  softap_client = new SoftAP();
 
   // Set Root CA certificate
   // esp_client.setCACert(ca_cert);
@@ -206,20 +218,7 @@ void setup()
   mqtt_client.setServer(mqtt_broker, mqtt_port);
   mqtt_client.setKeepAlive(60); // the default is 60 seconds, and it is disabled when it is set to 0
   mqtt_client.setBufferSize(30000);
-  connectToMQTT();
 
-  int current_image_number = 1;
-  Serial.println("Starting upload...");
-  String encodedImage, jsonString = "";
-  JsonDocument doc;
-  long int currentTime = millis();
-
-  while (millis() - currentTime <= 15000)
-  {
-    sendPayload(encodedImage, jsonString, doc, current_image_number, false);
-  }
-  // add last frame send that it is the last and start creating video in python
-  sendPayload(encodedImage, jsonString, doc, current_image_number, true);
   // core 0 bursts images to google cloud
   // xTaskCreatePinnedToCore(
   //     burstImages_cb,
@@ -229,9 +228,32 @@ void setup()
   //     2,
   //     &burstImages_t,
   //     APP_CPU);
+
+  pinMode(PIR_SENSOR_PIN, INPUT);
 }
 
 void loop()
 {
+  if (WiFi.isConnected())
+  {
+    int sensorValue = digitalRead(PIR_SENSOR_PIN);
+
+    if (sensorValue == HIGH && !sensorTriggered)
+    {
+      // Sensor is triggered
+      Serial.println("Sensor Triggered!");
+      sensorTriggered = true;
+      lastTriggerTime = millis();
+      // digitalWrite(LED_PIN, HIGH); // Turn on LED
+    }
+
+    if (sensorTriggered && (millis() - lastTriggerTime >= delayTime))
+    {
+      // Delay time has passed
+      Serial.println("Sensor can now be triggered again.");
+      sensorTriggered = false;
+      // digitalWrite(LED_PIN, LOW); // Turn off LED
+    }
+  }
   delay(10);
 }

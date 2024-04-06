@@ -149,6 +149,25 @@
         <button type="button"
                 class="my-2"
                 id="BTN_SEND_BACK">Connect</button>
+
+        <div style="display: none;"
+             id="connectToEW">
+            <h1>Connect to ElderWatch with your credentials</h1>
+            <p style="display: none;"
+               id="ewDevice">ew_id</p>
+            <p id="apiResponse"></p>
+            <input type="email"
+                   class="my-2 custom-input password-padding"
+                   placeholder="Email"
+                   id="ewEmail">
+            <input type="password"
+                   class="my-2 custom-input password-padding"
+                   placeholder="Password"
+                   id="ewPass" />
+            <button type="button"
+                    class="my-2"
+                    id="apiLogin">Connect Device</button>
+        </div>
     </div>
 </body>
 <script>
@@ -172,12 +191,68 @@
         .getElementById("BTN_SEND_BACK")
         .addEventListener("click", connectToNetwork);
 
+    document
+        .getElementById("apiLogin")
+        .addEventListener("click", loginToEW);
+
     document.addEventListener("DOMContentLoaded", function () {
         // Your function here
         responseEl.style = "color: blue;";
         responseEl.innerHTML = "Searching for networks. Please wait.";
         getNetworks();
     });
+
+    function loginToEW() {
+        var data = {
+            email: document.getElementById("ewEmail").value,
+            password: document.getElementById("ewPass").value,
+            device: document.getElementById("ewDevice").innerText
+        }
+        let apiResponse = document.getElementById("apiResponse");
+
+        if (data.email == "") {
+            apiResponse.style = "color: red;";
+            apiResponse.innerText = "Please enter your email address";
+            return;
+        }
+        else if (data.password == "") {
+            apiResponse.style = "color: red;";
+            apiResponse.innerText = "Please enter your password";
+            return;
+        }
+
+        apiResponse.style = "color: blue;";
+        apiResponse.innerText = "Registering device, please wait...";
+        fetch("https://baseurlofpage/api/deviceLogin", {
+            method: "POST",
+            headers: {
+                'Content-Type': 'application/json' // Specify JSON content type
+            },
+            body: JSON.stringify(data) // Convert data to JSON string
+        })
+            .then(response => {
+                if (!response.ok) {
+                    apiResponse.style = "color: red;";
+                    apiResponse.innerHTML = "Could not register device. Please try again.";
+                }
+                return response.text();
+            })
+            .then(data => {
+                parsedData = JSON.parse(data);
+
+                if (parsedData['response'] == "Ok") {
+                    apiResponse.style = "color: blue;";
+                    apiResponse.innerHTML = "Device registered successfully.";
+                } else if (parsedData['response'] == "Exists") {
+                    apiResponse.style = "color: blue;";
+                    apiResponse.innerHTML = "Device already exists.";
+                }
+            })
+            .catch(error => {
+                apiResponse.style = "color: red;";
+                apiResponse.innerHTML = "Could not register device. Please try again.";
+            });
+    }
 
     function connectToNetwork() {
         var msg = {
@@ -242,6 +317,7 @@
                     if (data == "Ok") {
                         responseEl.style = "color: green;";
                         responseEl.innerHTML = "Connection was successfuly established.";
+                        document.getElementById("connectToEW").style = "";
                     } else if (data == "Not Connected") {
                         responseEl.style = "color: red;";
                         responseEl.innerHTML = "Connection could no be established. Please try again.";

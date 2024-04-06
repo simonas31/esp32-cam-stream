@@ -7,7 +7,7 @@ const IPAddress local_IP(192, 168, 1, 22);
 const IPAddress gateway(192, 168, 1, 5);
 const IPAddress subnet(255, 255, 255, 0);
 
-AsyncWebServer async_server(81);
+AsyncWebServer async_server(80);
 
 long lastScanMillis = 0;
 
@@ -160,6 +160,8 @@ void SoftAP::HandleGetRequest(AsyncWebServerRequest *request)
     {
         String current_ssid = WiFi.SSID();
         htmlContent.replace("<br />", "You're already connected to: " + current_ssid);
+        htmlContent.replace("display: none;", "");
+        htmlContent.replace("ew_id", "EW-" + String(ESP.getEfuseMac()));
     }
 
     // xz kodel cia perkelt reikejo
