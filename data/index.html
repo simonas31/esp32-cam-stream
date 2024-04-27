@@ -223,7 +223,7 @@
 
         apiResponse.style = "color: blue;";
         apiResponse.innerText = "Registering device, please wait...";
-        fetch("https://baseurlofpage/api/deviceLogin", {
+        fetch("https://elderwatch-c6ea1a55a0c9.herokuapp.com/api/registerDevice", {
             method: "POST",
             headers: {
                 'Content-Type': 'application/json' // Specify JSON content type
@@ -235,17 +235,15 @@
                     apiResponse.style = "color: red;";
                     apiResponse.innerHTML = "Could not register device. Please try again.";
                 }
-                return response.text();
+                return response.json();
             })
             .then(data => {
-                parsedData = JSON.parse(data);
-
-                if (parsedData['response'] == "Ok") {
-                    apiResponse.style = "color: blue;";
+                if (data[0] == "Ok") {
+                    apiResponse.style = "color: green;";
                     apiResponse.innerHTML = "Device registered successfully.";
-                } else if (parsedData['response'] == "Exists") {
-                    apiResponse.style = "color: blue;";
-                    apiResponse.innerHTML = "Device already exists.";
+                } else {
+                    apiResponse.style = "color: red;";
+                    apiResponse.innerHTML = data[0];
                 }
             })
             .catch(error => {
