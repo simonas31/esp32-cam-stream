@@ -11,6 +11,37 @@ AsyncWebServer async_server(80);
 
 long lastScanMillis = 0;
 
+const char *server = "elderwatch-c6ea1a55a0c9.herokuapp.com";
+
+const char *rootCACertificate = R"string_literal(
+-----BEGIN CERTIFICATE-----
+MIIEdTCCA12gAwIBAgIJAKcOSkw0grd/MA0GCSqGSIb3DQEBCwUAMGgxCzAJBgNV
+BAYTAlVTMSUwIwYDVQQKExxTdGFyZmllbGQgVGVjaG5vbG9naWVzLCBJbmMuMTIw
+MAYDVQQLEylTdGFyZmllbGQgQ2xhc3MgMiBDZXJ0aWZpY2F0aW9uIEF1dGhvcml0
+eTAeFw0wOTA5MDIwMDAwMDBaFw0zNDA2MjgxNzM5MTZaMIGYMQswCQYDVQQGEwJV
+UzEQMA4GA1UECBMHQXJpem9uYTETMBEGA1UEBxMKU2NvdHRzZGFsZTElMCMGA1UE
+ChMcU3RhcmZpZWxkIFRlY2hub2xvZ2llcywgSW5jLjE7MDkGA1UEAxMyU3RhcmZp
+ZWxkIFNlcnZpY2VzIFJvb3QgQ2VydGlmaWNhdGUgQXV0aG9yaXR5IC0gRzIwggEi
+MA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDVDDrEKvlO4vW+GZdfjohTsR8/
+y8+fIBNtKTrID30892t2OGPZNmCom15cAICyL1l/9of5JUOG52kbUpqQ4XHj2C0N
+Tm/2yEnZtvMaVq4rtnQU68/7JuMauh2WLmo7WJSJR1b/JaCTcFOD2oR0FMNnngRo
+Ot+OQFodSk7PQ5E751bWAHDLUu57fa4657wx+UX2wmDPE1kCK4DMNEffud6QZW0C
+zyyRpqbn3oUYSXxmTqM6bam17jQuug0DuDPfR+uxa40l2ZvOgdFFRjKWcIfeAg5J
+Q4W2bHO7ZOphQazJ1FTfhy/HIrImzJ9ZVGif/L4qL8RVHHVAYBeFAlU5i38FAgMB
+AAGjgfAwge0wDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAYYwHQYDVR0O
+BBYEFJxfAN+qAdcwKziIorhtSpzyEZGDMB8GA1UdIwQYMBaAFL9ft9HO3R+G9FtV
+rNzXEMIOqYjnME8GCCsGAQUFBwEBBEMwQTAcBggrBgEFBQcwAYYQaHR0cDovL28u
+c3MyLnVzLzAhBggrBgEFBQcwAoYVaHR0cDovL3guc3MyLnVzL3guY2VyMCYGA1Ud
+HwQfMB0wG6AZoBeGFWh0dHA6Ly9zLnNzMi51cy9yLmNybDARBgNVHSAECjAIMAYG
+BFUdIAAwDQYJKoZIhvcNAQELBQADggEBACMd44pXyn3pF3lM8R5V/cxTbj5HD9/G
+VfKyBDbtgB9TxF00KGu+x1X8Z+rLP3+QsjPNG1gQggL4+C/1E2DUBc7xgQjB3ad1
+l08YuW3e95ORCLp+QCztweq7dp4zBncdDQh/U90bZKuCJ/Fp1U1ervShw3WnWEQt
+8jxwmKy6abaVd38PMV4s/KCHOkdp8Hlf9BRUpJVeEXgSYCfOn8J3/yNTd126/+pZ
+59vPr5KW7ySaNRB6nJHGDn2Z9j8Z3/VyVOEVqQdZe4O/Ui5GjLIAZHYcSNPYeehu
+VsyuLAOQ1xk4meTKCRlb/weWsKh/NEnfVqn3sF/tM+2MR7cwA130A4w=
+-----END CERTIFICATE-----
+)string_literal";
+
 SoftAP::SoftAP()
 {
     Serial.begin(115200);
@@ -119,6 +150,85 @@ SoftAP::SoftAP()
                     {
                         request->send(200, "text/plain", "Already Connected");
                     }
+                }
+            }
+        });
+
+    async_server.on(
+        "/registerDevice", HTTP_POST, [](AsyncWebServerRequest *request)
+        {
+            // This is the main handler for handling the POST request itself
+            // You can put your main POST request handling logic here
+        },
+        [](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
+        {
+            // This is the onBody handler for processing request body
+            // You can put your request body handling logic here
+        },
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+        {
+            Serial.begin(115200);
+            if (index == 0)
+            {
+                // Initialize a string buffer to hold the incoming data
+                static String postData;
+
+                // Convert the incoming data to a string
+                postData = String((char *)data);
+
+                // Check if this is the final chunk of data
+                if (index + len == total)
+                {
+                    JsonDocument doc; // Adjust the size as needed
+                    DeserializationError error = deserializeJson(doc, postData);
+
+                    // Check if parsing was successful
+                    if (error)
+                    {
+                        // Parsing failed
+                        Serial.print("deserializeJson() failed: ");
+                        Serial.println(error.c_str());
+                        // Respond with an error to the client
+                        request->send(400, "text/plain", "Failed to parse JSON data");
+                    }
+
+                    // Parsing successful
+                    // Extract values from the JSON document
+                    String jsonString;
+                    convertFromJson(doc, jsonString);
+
+                    WiFiClientSecure client;
+
+                    client.setCACert(rootCACertificate);
+
+                    if (client.connect(server, 443))
+                    {
+                        Serial.print("[HTTPS] connected...\n");
+                        Serial.print(jsonString);
+                        String postRequest = "POST /api/registerDevice HTTP/1.1\r\n";
+                        postRequest += "Host: " + String(server) + "\r\n";
+                        postRequest += "Connection: close\r\n";
+                        postRequest += "Content-Type: application/json\r\n";
+                        postRequest += "Content-Length: " + String(jsonString.length()) + "\r\n\r\n";
+                        postRequest += jsonString + "\r\n";
+                        client.print(jsonString);
+
+                        // FIX THIS SHIT BECAUSE IT BREAKS 
+                        while (client.connected() || client.available())
+                        {
+                            if (client.available())
+                            {
+                                String line = client.readStringUntil('\n');
+                                request->send(200, "application/json", line);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Serial.println("[HTTPS] Unable to connect");
+                    }
+
+                    client.stop();
                 }
             }
         });

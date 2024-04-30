@@ -60,7 +60,7 @@ uint8_t *_jpg_buf = NULL;
 bool sensorTriggered = false;          // Flag to track if sensor has been triggered
 unsigned long lastTriggerTime = 0;     // Time of last trigger
 const unsigned long delayTime = 60000; // Delay time in milliseconds (60 seconds)
-const int PIR_SENSOR_PIN = 13;         // Pin connected to PIR sensor
+const int PIR_SENSOR_PIN = 12;         // Pin connected to PIR sensor
 
 void connectToMQTT()
 {
@@ -244,7 +244,6 @@ void loop()
       Serial.println("Sensor Triggered!");
       sensorTriggered = true;
       lastTriggerTime = millis();
-      // digitalWrite(LED_PIN, HIGH); // Turn on LED
     }
 
     if (sensorTriggered && (millis() - lastTriggerTime >= delayTime))
@@ -252,7 +251,6 @@ void loop()
       // Delay time has passed
       Serial.println("Sensor can now be triggered again.");
       sensorTriggered = false;
-      // digitalWrite(LED_PIN, LOW); // Turn off LED
     }
   }
   delay(10);

@@ -223,7 +223,7 @@
 
         apiResponse.style = "color: blue;";
         apiResponse.innerText = "Registering device, please wait...";
-        fetch("https://elderwatch-c6ea1a55a0c9.herokuapp.com/api/registerDevice", {
+        fetch("/registerDevice", {
             method: "POST",
             headers: {
                 'Content-Type': 'application/json' // Specify JSON content type
@@ -238,7 +238,7 @@
                 return response.json();
             })
             .then(data => {
-                if (data[0] == "Ok") {
+                if (data[0] == "Device registered successfully") {
                     apiResponse.style = "color: green;";
                     apiResponse.innerHTML = "Device registered successfully.";
                 } else {
@@ -248,7 +248,7 @@
             })
             .catch(error => {
                 apiResponse.style = "color: red;";
-                apiResponse.innerHTML = "Could not register device. Please try again.";
+                apiResponse.innerHTML = error;
             });
     }
 
