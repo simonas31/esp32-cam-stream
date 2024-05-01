@@ -10,6 +10,7 @@
 #include <string>
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 
 const int MAX_CONNECTION_ATTEMPTS = 7;
 const int MAX_NETWORKS_SHOWN = 10;

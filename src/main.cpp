@@ -33,9 +33,6 @@
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-// Define soft ap object for connecting to WiFi
-SoftAP *softap_client = nullptr;
-
 bool motion_detected = false;
 
 // Task handles for running tasks on separate cores
@@ -209,7 +206,7 @@ void setup()
 
   Serial.println("Camera initialized successfully.");
   // core 1 executes web requests to the localhosted server
-  softap_client = new SoftAP();
+  SoftAP *softap_client = new SoftAP();
 
   // Set Root CA certificate
   // esp_client.setCACert(ca_cert);
@@ -253,5 +250,5 @@ void loop()
       sensorTriggered = false;
     }
   }
-  delay(10);
+  delay(100);
 }

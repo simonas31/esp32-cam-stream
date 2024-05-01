@@ -235,15 +235,15 @@
                     apiResponse.style = "color: red;";
                     apiResponse.innerHTML = "Could not register device. Please try again.";
                 }
-                return response.json();
+                return response.text();
             })
             .then(data => {
-                if (data[0] == "Device registered successfully") {
+                if (data == "Device registered successfully") {
                     apiResponse.style = "color: green;";
                     apiResponse.innerHTML = "Device registered successfully.";
                 } else {
-                    apiResponse.style = "color: red;";
-                    apiResponse.innerHTML = data[0];
+                    apiResponse.style = "color: blue;";
+                    apiResponse.innerHTML = data;
                 }
             })
             .catch(error => {

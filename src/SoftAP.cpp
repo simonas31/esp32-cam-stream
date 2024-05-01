@@ -200,35 +200,28 @@ SoftAP::SoftAP()
                     WiFiClientSecure client;
 
                     client.setCACert(rootCACertificate);
+                    client.setTimeout(10000);
 
-                    if (client.connect(server, 443))
+                    HTTPClient http;
+                    http.begin(client, "https://elderwatch-c6ea1a55a0c9.herokuapp.com/api/registerDevice");
+                    http.addHeader("Content-Type", "application/json");
+
+                    int httpResponseCode = http.POST(jsonString);
+
+                    if (httpResponseCode > 0)
                     {
-                        Serial.print("[HTTPS] connected...\n");
-                        Serial.print(jsonString);
-                        String postRequest = "POST /api/registerDevice HTTP/1.1\r\n";
-                        postRequest += "Host: " + String(server) + "\r\n";
-                        postRequest += "Connection: close\r\n";
-                        postRequest += "Content-Type: application/json\r\n";
-                        postRequest += "Content-Length: " + String(jsonString.length()) + "\r\n\r\n";
-                        postRequest += jsonString + "\r\n";
-                        client.print(jsonString);
-
-                        // FIX THIS SHIT BECAUSE IT BREAKS 
-                        while (client.connected() || client.available())
-                        {
-                            if (client.available())
-                            {
-                                String line = client.readStringUntil('\n');
-                                request->send(200, "application/json", line);
-                            }
-                        }
+                        // Successful API call
+                        String response = http.getString();
+                        response = response.substring(2, response.length() - 2);
+                        request->send(200, "text/plain", response);
                     }
                     else
                     {
-                        Serial.println("[HTTPS] Unable to connect");
+                        // Failed API call
+                        request->send(500, "text/plain", "API call failed");
                     }
 
-                    client.stop();
+                    http.end();
                 }
             }
         });
@@ -271,7 +264,7 @@ void SoftAP::HandleGetRequest(AsyncWebServerRequest *request)
         String current_ssid = WiFi.SSID();
         htmlContent.replace("<br />", "You're already connected to: " + current_ssid);
         htmlContent.replace("display: none;", "");
-        htmlContent.replace("ew_id", "EW-" + String(ESP.getEfuseMac()));
+        htmlContent.replace("ew_id", "EW" + String(ESP.getEfuseMac()));
     }
 
     // xz kodel cia perkelt reikejo
@@ -438,7 +431,7 @@ String SoftAP::GetDeviceName()
     else
     {
         Serial.println("Previous device name not detected.");
-        device_name = "EW-" + String(ESP.getEfuseMac());
+        device_name = "EW" + String(ESP.getEfuseMac());
         EEPROM.put(EEPROM_DEVICE_NAME_ADDRESS, device_name);
         EEPROM.put(EEPROM_DEVICE_NAME_FLAG_ADDRESS, 1);
         EEPROM.commit();
