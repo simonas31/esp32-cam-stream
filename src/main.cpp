@@ -126,12 +126,6 @@ void burstImages_cb(void *pvParameters)
   JsonDocument doc;
   long int currentTime = millis();
 
-  while (!WiFi.isConnected())
-  {
-    Serial.print("Process needs to be connected to wifi");
-    delay(500);
-  }
-
   Serial.print("Process connected to wifi");
 
   for (;;)
@@ -147,7 +141,9 @@ void burstImages_cb(void *pvParameters)
       // add last frame send that it is the last and start creating video in python
       delay(100);
       sendPayload(encodedImage, jsonString, doc, current_image_number, true);
+      current_image_number = 1;
       Serial.println("Done uploading...");
+      delay(20000);
     }
 
     delay(10);
@@ -179,8 +175,8 @@ esp_err_t initCamera()
   config.pixel_format = PIXFORMAT_JPEG;
 
   // parameters for image quality and size
-  config.frame_size = FRAMESIZE_XGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
-  config.jpeg_quality = 15;          // 10-63 lower number means higher quality
+  config.frame_size = FRAMESIZE_SVGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+  config.jpeg_quality = 15;           // 10-63 lower number means higher quality
   config.fb_count = 2;
 
   // Camera init
@@ -217,20 +213,27 @@ void setup()
   mqtt_client.setBufferSize(30000);
 
   // core 0 bursts images to google cloud
-  // xTaskCreatePinnedToCore(
-  //     burstImages_cb,
-  //     "burstImages",
-  //     15000,
-  //     NULL,
-  //     2,
-  //     &burstImages_t,
-  //     APP_CPU);
+  xTaskCreatePinnedToCore(
+      burstImages_cb,
+      "burstImages",
+      15000,
+      NULL,
+      2,
+      &burstImages_t,
+      APP_CPU);
 
   pinMode(PIR_SENSOR_PIN, INPUT);
 }
 
+bool first = true;
+
 void loop()
 {
+  if (first)
+  {
+    delay(10000);
+    first = false;
+  }
   if (WiFi.isConnected())
   {
     int sensorValue = digitalRead(PIR_SENSOR_PIN);
