@@ -231,8 +231,10 @@ void loop()
 {
   if (first)
   {
-    delay(10000);
+    Serial.println("\nInitializing loop...");
+    delay(5000);
     first = false;
+    Serial.println("PIR SENSOR READY!");
   }
   if (WiFi.isConnected())
   {

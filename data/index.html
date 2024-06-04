@@ -136,7 +136,7 @@
         </p>
         <div class="custom-select">
             <div class="select-selected">
-                <span>Available Networks</span>
+                Available Networks
             </div>
             <div class="select-items"
                  id="select-items">
@@ -254,19 +254,19 @@
 
     function connectToNetwork() {
         var msg = {
-            network_ssid: selectedNetwork,
+            network_ssid: document.getElementsByClassName("select-selected")[0].textContent,
             network_password: document.getElementById("networkPassword").value,
         };
 
         responseEl.style = "color: red;";
-        if (msg.network_ssid == "") {
+        if (msg.network_ssid == "" || msg.network_ssid == "Available Networks") {
             responseEl.innerText = "Please select network name.";
             return;
         } else if (msg.network_password == "") {
             responseEl.innerText = "Please enter network password.";
             return;
         }
-
+        console.log(msg);
         connectionEl.innerText = "";
         responseEl.style = "color: green;";
         responseEl.innerHTML = "Connecting to network. Please wait...";
@@ -302,6 +302,7 @@
 
     function checkIfConnected() {
         if (nIntervId != null) {
+            console.log('check if connected');
             fetch("/checkConnection", {
                 method: 'GET',
             })

@@ -141,7 +141,7 @@ SoftAP::SoftAP()
 
                     // trying to connect to another network
                     int str_compare = strcmp(WiFi.SSID().c_str(), network_ssid);
-                    if (str_compare != 0 && this->Disconnect())
+                    if (str_compare != 0)
                     {
                         this->Connect(network_ssid, network_password) ? request->send(200, "text/plain", "Ok") : request->send(200, "text/plain", "Failed to Connect");
                         return;
@@ -234,9 +234,9 @@ void SoftAP::SetupSoftAP()
     WiFi.disconnect();
     WiFi.softAP(SoftAP_ssid, SoftAP_password);
 
-    Serial.print("SoftAP IP address = ");
+    // Serial.print("SoftAP IP address = ");
     IPAddress softAPIP = WiFi.softAPIP();
-    Serial.println(softAPIP);
+    // Serial.println(softAPIP);
 
     SetupMDNS("EWstation");
 }
@@ -346,6 +346,12 @@ bool SoftAP::Connect(String network_ssid, String network_password)
 {
     Serial.begin(115200);
 
+    if (WiFi.isConnected())
+    {
+        Disconnect();
+        Serial.println("disconnected from WiFi network");
+    }
+
     WiFi.setAutoReconnect(true);
     WiFi.begin(network_ssid, network_password);
 
@@ -370,7 +376,7 @@ bool SoftAP::Connect(String network_ssid, String network_password)
 
     SaveConnectionData(network_ssid, network_password);
 
-    Serial.println(WiFi.localIP());
+    // Serial.println(WiFi.localIP());
 
     return true;
 }
